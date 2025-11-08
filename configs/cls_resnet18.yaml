@@ -1,0 +1,56 @@
+# Classification training configuration: ResNet-18 for benign vs malignant
+
+task: classification
+model: resnet18
+data_dir: BUS_UC_classification/BUS_UC_classification
+
+# Image settings
+img_size: 256
+in_channels: 3
+
+# Model architecture
+num_classes: 1  # Binary classification with BCE
+pretrained: true
+freeze_epochs: 5  # Freeze early layers for first N epochs
+
+# Training hyperparameters
+optimizer: adamw
+lr: 5.0e-4
+weight_decay: 1.0e-4
+scheduler: one_cycle  # 'cosine', 'one_cycle', or null
+epochs: 80
+early_stop_patience: 10
+batch_size: 32
+num_workers: 4
+
+# Loss configuration
+loss: focal
+focal_gamma: 1.5
+focal_alpha: 0.25
+
+# Class balancing
+use_class_weights: true
+use_weighted_sampler: true  # WeightedRandomSampler for imbalanced data
+
+# Augmentation
+augment: medium
+
+# Cross-validation
+kfolds: 5
+seed: 42
+
+# Metrics to track
+metrics:
+  - roc_auc
+  - balanced_accuracy
+  - sensitivity
+  - specificity
+  - ece  # Expected Calibration Error
+
+# Training options
+mixed_precision: true
+gradient_clip: 1.0
+save_best_by: roc_auc
+
+# Calibration
+calibrate_temperature: true  # Fit temperature scaling on validation set

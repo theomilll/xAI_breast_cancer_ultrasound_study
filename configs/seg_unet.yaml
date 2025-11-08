@@ -1,0 +1,52 @@
+# Segmentation training configuration: U-Net with ResNet-34 encoder
+
+task: segmentation
+model: unet_res34
+data_dir: BUS_UC/BUS_UC/BUS_UC
+
+# Image settings
+img_size: 256
+in_channels: 3
+
+# Model architecture
+encoder_name: resnet34
+encoder_weights: imagenet
+num_classes: 1
+
+# Training hyperparameters
+optimizer: adamw
+lr: 1.0e-3
+weight_decay: 1.0e-4
+scheduler: cosine
+epochs: 100
+early_stop_patience: 10
+batch_size: 16
+num_workers: 4
+
+# Loss configuration
+loss:
+  name: dice_bce
+  dice_weight: 0.5
+  bce_weight: 0.5
+
+# Augmentation
+augment: medium  # 'light', 'medium', or 'heavy'
+
+# Cross-validation
+kfolds: 5
+seed: 42
+
+# Metrics to track
+metrics:
+  - dice
+  - iou
+  - boundary_f1
+
+# Training options
+mixed_precision: true
+gradient_clip: 1.0
+save_best_by: dice
+
+# Optional: SWA (Stochastic Weight Averaging)
+use_swa: false
+swa_start_epoch: 95
