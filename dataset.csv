@@ -1,0 +1,10 @@
+Level,Name,Type,Description,File Count
+0,.,directory,Root directory,2
+1,images,directory,Contains all ultrasound images,811
+1,masks,directory,Contains corresponding segmentation masks,811
+1,Benign,directory,Contains benign tumor data,2
+2,Benign/images,directory,Ultrasound images of benign tumors,358
+2,Benign/masks,directory,Segmentation masks for benign tumors,358
+1,Malignant,directory,Contains malignant tumor data,2
+2,Malignant/images,directory,Ultrasound images of malignant tumors,453
+2,Malignant/masks,directory,Segmentation masks for malignant tumors,453
