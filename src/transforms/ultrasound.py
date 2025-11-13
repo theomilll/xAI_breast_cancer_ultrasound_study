@@ -31,12 +31,12 @@ def get_train_transforms(img_size: int = 256, augment_level: str = "medium"):
         A.Rotate(limit=15, p=rotate_p, border_mode=0),
         A.ElasticTransform(alpha=10, sigma=4, alpha_affine=0, p=elastic_p),
         A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=brightness_p),
-        A.Lambda(image=lambda img, **kwargs: SpeckleNoise(intensity=0.1, p=speckle_p)(img)),
+        SpeckleNoise(intensity=0.1, p=speckle_p),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ]
 
-    return A.Compose(transforms)
+    return A.Compose(transforms, additional_targets={"soft_mask": "mask"})
 
 
 def get_val_transforms(img_size: int = 256):
@@ -54,10 +54,10 @@ def get_val_transforms(img_size: int = 256):
         ToTensorV2(),
     ]
 
-    return A.Compose(transforms)
+    return A.Compose(transforms, additional_targets={"soft_mask": "mask"})
 
 
-class SpeckleNoise:
+class SpeckleNoise(A.ImageOnlyTransform):
     """Add speckle noise to ultrasound images (multiplicative Rayleigh noise)."""
 
     def __init__(self, intensity: float = 0.1, p: float = 0.5):
@@ -66,29 +66,26 @@ class SpeckleNoise:
             intensity: Noise intensity (std of Rayleigh distribution)
             p: Probability of applying transform
         """
+        super().__init__(p=p)
         self.intensity = intensity
-        self.p = p
 
-    def __call__(self, image, **kwargs):
+    def apply(self, img, **params):
         """Apply speckle noise.
 
         Args:
-            image: Input image (H, W, C) or (H, W)
+            img: Input image (H, W, C) or (H, W)
 
         Returns:
             Noisy image
         """
-        if np.random.rand() > self.p:
-            return image
-
         # Generate Rayleigh noise (multiplicative)
-        noise = np.random.rayleigh(scale=self.intensity, size=image.shape)
+        noise = np.random.rayleigh(scale=self.intensity, size=img.shape)
 
         # Apply multiplicative noise
-        noisy_image = image * (1 + noise)
+        noisy_image = img * (1 + noise)
 
         # Clip to valid range (assume 0-255 for uint8 or 0-1 for float)
-        if image.dtype == np.uint8:
+        if img.dtype == np.uint8:
             noisy_image = np.clip(noisy_image, 0, 255).astype(np.uint8)
         else:
             noisy_image = np.clip(noisy_image, 0, 1).astype(np.float32)

@@ -69,17 +69,17 @@ def get_data_paths(data_dir: Path, task: str = "segmentation"):
         }
 
     elif task == "classification":
-        # Navigate nested structure: BUS_UC_classification/BUS_UC_classification/
+        # Use same BUS_UC structure as segmentation, just ignore masks
         nested_dir = data_dir
-        while (nested_dir / "BUS_UC_classification").exists():
-            nested_dir = nested_dir / "BUS_UC_classification"
+        while (nested_dir / "BUS_UC").exists():
+            nested_dir = nested_dir / "BUS_UC"
 
-        # Get paths for both classes
-        benign_dir = nested_dir / "Benign"
-        malignant_dir = nested_dir / "Malignant"
+        # Get paths for both classes (images only)
+        benign_img_dir = nested_dir / "Benign" / "images"
+        malignant_img_dir = nested_dir / "Malignant" / "images"
 
-        benign_images = sorted(list(benign_dir.glob("*.png")))
-        malignant_images = sorted(list(malignant_dir.glob("*.png")))
+        benign_images = sorted(list(benign_img_dir.glob("*.png")))
+        malignant_images = sorted(list(malignant_img_dir.glob("*.png")))
 
         return {
             "benign": {"images": benign_images},

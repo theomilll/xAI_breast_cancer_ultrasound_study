@@ -33,11 +33,17 @@ class DiceBCELoss(nn.Module):
         Returns:
             Combined loss
         """
-        # TODO: Implement
-        # - BCE loss from logits
-        # - Dice loss from sigmoid(logits)
-        # - Combine with weights
-        raise NotImplementedError
+        # BCE loss
+        bce = self.bce(logits, targets.float())
+
+        # Dice loss
+        probs = torch.sigmoid(logits)
+        num = 2 * (probs * targets).sum(dim=(2, 3)) + self.smooth
+        den = (probs + targets).sum(dim=(2, 3)) + self.smooth
+        dice = 1 - (num / den).mean()
+
+        # Combine
+        return self.dice_weight * dice + self.bce_weight * bce
 
 
 class TverskyLoss(nn.Module):
@@ -129,18 +135,18 @@ class BoundaryLoss(nn.Module):
 
 
 class FocalLoss(nn.Module):
-    """Focal loss for classification with class imbalance."""
+    """Focal loss for multi-class classification with class imbalance."""
 
     def __init__(
         self,
-        alpha: float = 0.25,
+        alpha=None,
         gamma: float = 2.0,
         reduction: str = "mean",
     ):
         """
         Args:
-            alpha: Weighting factor for rare class
-            gamma: Focusing parameter
+            alpha: Class weights (None or list/tensor of length num_classes)
+            gamma: Focusing parameter (higher = more focus on hard examples)
             reduction: 'mean' or 'sum'
         """
         super().__init__()
@@ -151,12 +157,30 @@ class FocalLoss(nn.Module):
     def forward(self, logits, targets):
         """
         Args:
-            logits: Predicted logits (B,) or (B, C)
+            logits: Predicted logits (B, C) for C classes
             targets: Ground truth labels (B,) as long
 
         Returns:
             Focal loss
         """
-        # TODO: Implement focal loss
         # FL(p_t) = -α_t * (1 - p_t)^γ * log(p_t)
-        raise NotImplementedError
+        ce_loss = F.cross_entropy(logits, targets, reduction='none')
+        p_t = torch.exp(-ce_loss)  # Probability of true class
+        focal_weight = (1 - p_t) ** self.gamma
+
+        # Apply class weights if provided
+        if self.alpha is not None:
+            if isinstance(self.alpha, (list, tuple)):
+                alpha = torch.tensor(self.alpha, device=logits.device)
+            else:
+                alpha = self.alpha
+            alpha_t = alpha[targets]
+            focal_weight = alpha_t * focal_weight
+
+        loss = focal_weight * ce_loss
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss

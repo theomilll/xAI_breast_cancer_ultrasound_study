@@ -49,27 +49,84 @@ def build_segmentation_model(config: dict):
     Returns:
         Lightning model
     """
-    # TODO: Implement
-    # 1. Instantiate backbone (UNetRes34 or DeepLabV3+)
-    # 2. Instantiate loss (DiceBCE, Tversky, etc.)
-    # 3. Wrap in LightningSegModel
-    raise NotImplementedError
+    # Instantiate backbone
+    if config["model"] == "unet_res34":
+        backbone = UNetRes34(
+            num_classes=1,
+            encoder_name="resnet34",
+            encoder_weights="imagenet",
+        )
+    else:
+        raise ValueError(f"Unknown model: {config['model']}")
+
+    # Instantiate loss
+    loss_config = config["loss"]
+    if loss_config["name"] == "dice_bce":
+        loss_fn = DiceBCELoss(
+            dice_weight=loss_config.get("dice_weight", 0.5),
+            bce_weight=loss_config.get("bce_weight", 0.5),
+        )
+    else:
+        raise ValueError(f"Unknown loss: {loss_config['name']}")
+
+    # Wrap in Lightning model
+    model = LightningSegModel(
+        model=backbone,
+        loss_fn=loss_fn,
+        learning_rate=config["lr"],
+        weight_decay=config["weight_decay"],
+        scheduler=config["scheduler"],
+        epochs=config["epochs"],
+    )
+
+    return model
 
 
-def build_classification_model(config: dict):
+def build_classification_model(config: dict, steps_per_epoch: int):
     """Build classification model from config.
 
     Args:
         config: Configuration dictionary
+        steps_per_epoch: Steps per epoch for OneCycleLR
 
     Returns:
         Lightning model
     """
-    # TODO: Implement
-    # 1. Instantiate backbone (ResNet18 or EfficientNet)
-    # 2. Instantiate loss (Focal, CE, etc.)
-    # 3. Wrap in LightningClsModel
-    raise NotImplementedError
+    # Instantiate backbone
+    if config["model"] == "resnet18":
+        backbone = ResNet18Classifier(
+            num_classes=config["num_classes"],
+            pretrained=config.get("pretrained", True),
+            freeze_backbone=config.get("freeze_backbone", False),
+        )
+    else:
+        raise ValueError(f"Unknown model: {config['model']}")
+
+    # Instantiate loss
+    loss_config = config["loss"]
+    if loss_config["name"] == "focal":
+        loss_fn = FocalLoss(
+            gamma=loss_config.get("gamma", 2.0),
+            alpha=loss_config.get("alpha", None),
+        )
+    elif loss_config["name"] == "cross_entropy":
+        loss_fn = torch.nn.CrossEntropyLoss()
+    else:
+        raise ValueError(f"Unknown loss: {loss_config['name']}")
+
+    # Wrap in Lightning model
+    model = LightningClsModel(
+        model=backbone,
+        loss_fn=loss_fn,
+        learning_rate=config["lr"],
+        weight_decay=config["weight_decay"],
+        scheduler=config["scheduler"],
+        epochs=config["epochs"],
+        steps_per_epoch=steps_per_epoch,
+        unfreeze_epoch=config.get("unfreeze_epoch", None),
+    )
+
+    return model
 
 
 def train_single_fold(config: dict, fold: int, output_dir: Path):
@@ -85,8 +142,9 @@ def train_single_fold(config: dict, fold: int, output_dir: Path):
     # Seed
     seed_everything(config["seed"] + fold)
 
-    # DataModule
-    if config["task"] == "segmentation":
+    # DataModule - segmentation or classification
+    task = config.get("task", "segmentation")
+    if task == "segmentation":
         datamodule = BusUcSegDataModule(
             data_dir=config["data_dir"],
             img_size=config["img_size"],
@@ -96,8 +154,7 @@ def train_single_fold(config: dict, fold: int, output_dir: Path):
             n_folds=config["kfolds"],
             seed=config["seed"],
         )
-        model = build_segmentation_model(config)
-    elif config["task"] == "classification":
+    elif task == "classification":
         datamodule = BusUcClsDataModule(
             data_dir=config["data_dir"],
             img_size=config["img_size"],
@@ -105,11 +162,23 @@ def train_single_fold(config: dict, fold: int, output_dir: Path):
             augment_level=config["augment"],
             fold=fold,
             n_folds=config["kfolds"],
+            use_weighted_sampler=config.get("use_weighted_sampler", True),
             seed=config["seed"],
         )
-        model = build_classification_model(config)
     else:
-        raise ValueError(f"Unknown task: {config['task']}")
+        raise ValueError(f"Unknown task: {task}")
+
+    # Setup datamodule to compute dataset size
+    datamodule.setup()
+
+    # Build model
+    if task == "segmentation":
+        model = build_segmentation_model(config)
+    elif task == "classification":
+        steps_per_epoch = len(datamodule.train_dataloader())
+        model = build_classification_model(config, steps_per_epoch)
+    else:
+        raise ValueError(f"Unknown task: {task}")
 
     # Callbacks
     checkpoint_callback = ModelCheckpoint(
@@ -143,16 +212,29 @@ def train_single_fold(config: dict, fold: int, output_dir: Path):
         deterministic=True,
     )
 
+    # Check for existing checkpoint to resume
+    checkpoint_dir = output_dir / f"fold_{fold}"
+    checkpoint_files = list(checkpoint_dir.glob("best*.ckpt")) if checkpoint_dir.exists() else []
+    ckpt_path = None
+    if checkpoint_files:
+        # Use most recent checkpoint
+        ckpt_path = str(max(checkpoint_files, key=lambda p: p.stat().st_mtime))
+        console.print(f"[yellow]Resuming from checkpoint: {ckpt_path}[/yellow]")
+
     # Train
-    trainer.fit(model, datamodule=datamodule)
+    trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
 
     # Test
-    trainer.test(model, datamodule=datamodule, ckpt_path="best")
+    test_results = trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
     # Save metrics
-    # TODO: Extract and save metrics to JSON
+    metrics = test_results[0] if test_results else {}
+    metrics_path = output_dir / f"fold_{fold}" / "metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
 
     console.print(f"[bold green]✓ Fold {fold} complete[/bold green]")
+    console.print(f"  Metrics saved to {metrics_path}")
 
 
 def aggregate_cv_results(output_dir: Path, n_folds: int):
@@ -162,11 +244,48 @@ def aggregate_cv_results(output_dir: Path, n_folds: int):
         output_dir: Directory with fold results
         n_folds: Number of folds
     """
-    # TODO: Implement
-    # 1. Load metrics from each fold
-    # 2. Compute mean ± std
-    # 3. Save to aggregated JSON
-    # 4. Print summary table
+    import numpy as np
+
+    # Load metrics from each fold
+    all_metrics = []
+    for fold in range(n_folds):
+        metrics_path = output_dir / f"fold_{fold}" / "metrics.json"
+        if metrics_path.exists():
+            with open(metrics_path, "r") as f:
+                all_metrics.append(json.load(f))
+        else:
+            console.print(f"[yellow]Warning: {metrics_path} not found[/yellow]")
+
+    if not all_metrics:
+        console.print("[red]No metrics found to aggregate[/red]")
+        return
+
+    # Compute mean ± std
+    aggregated = {}
+    metric_keys = all_metrics[0].keys()
+
+    for key in metric_keys:
+        values = [m[key] for m in all_metrics if key in m]
+        if values:
+            aggregated[f"{key}_mean"] = float(np.mean(values))
+            aggregated[f"{key}_std"] = float(np.std(values))
+            aggregated[f"{key}_values"] = values
+
+    # Save aggregated results
+    agg_path = output_dir / "cv_results.json"
+    with open(agg_path, "w") as f:
+        json.dump(aggregated, f, indent=2)
+
+    # Print summary table
+    console.print("\n[bold cyan]Cross-Validation Results Summary:[/bold cyan]")
+    console.print("=" * 60)
+    for key in sorted(metric_keys):
+        if key in [m for m in metric_keys]:
+            mean = aggregated.get(f"{key}_mean", 0)
+            std = aggregated.get(f"{key}_std", 0)
+            console.print(f"  {key:30s}: {mean:.4f} ± {std:.4f}")
+    console.print("=" * 60)
+    console.print(f"Results saved to {agg_path}")
     console.print("[bold green]Cross-validation complete![/bold green]")
 
 

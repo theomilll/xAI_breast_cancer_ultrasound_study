@@ -21,9 +21,19 @@ def dice_score(preds, targets, smooth=1.0):
     Returns:
         Dice score (scalar)
     """
-    # TODO: Implement
     # Dice = (2 * |X ∩ Y| + smooth) / (|X| + |Y| + smooth)
-    raise NotImplementedError
+    if isinstance(preds, torch.Tensor):
+        preds = preds.detach().cpu().numpy()
+    if isinstance(targets, torch.Tensor):
+        targets = targets.detach().cpu().numpy()
+
+    preds = preds.flatten()
+    targets = targets.flatten()
+
+    intersection = (preds * targets).sum()
+    dice = (2.0 * intersection + smooth) / (preds.sum() + targets.sum() + smooth)
+
+    return float(dice)
 
 
 def iou_score(preds, targets, smooth=1.0):
@@ -37,9 +47,20 @@ def iou_score(preds, targets, smooth=1.0):
     Returns:
         IoU score (scalar)
     """
-    # TODO: Implement
     # IoU = (|X ∩ Y| + smooth) / (|X ∪ Y| + smooth)
-    raise NotImplementedError
+    if isinstance(preds, torch.Tensor):
+        preds = preds.detach().cpu().numpy()
+    if isinstance(targets, torch.Tensor):
+        targets = targets.detach().cpu().numpy()
+
+    preds = preds.flatten()
+    targets = targets.flatten()
+
+    intersection = (preds * targets).sum()
+    union = preds.sum() + targets.sum() - intersection
+    iou = (intersection + smooth) / (union + smooth)
+
+    return float(iou)
 
 
 def boundary_iou(preds, targets, dilation=2):
@@ -97,10 +118,18 @@ def compute_sensitivity_specificity(preds, targets):
     Returns:
         tuple: (sensitivity, specificity)
     """
-    # TODO: Implement using confusion matrix
     # Sensitivity = TP / (TP + FN)
     # Specificity = TN / (TN + FP)
-    raise NotImplementedError
+    if isinstance(preds, torch.Tensor):
+        preds = preds.detach().cpu().numpy()
+    if isinstance(targets, torch.Tensor):
+        targets = targets.detach().cpu().numpy()
+
+    tn, fp, fn, tp = confusion_matrix(targets, preds).ravel()
+    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+
+    return float(sensitivity), float(specificity)
 
 
 def compute_balanced_accuracy(preds, targets):
@@ -127,8 +156,26 @@ def expected_calibration_error(probs, targets, n_bins=15):
     Returns:
         ECE score
     """
-    # TODO: Implement ECE
-    # - Bin predictions by confidence
-    # - Compute |accuracy - confidence| per bin
-    # - Weight by bin size
-    raise NotImplementedError
+    # Bin predictions by confidence
+    # Compute |accuracy - confidence| per bin
+    # Weight by bin size
+    if isinstance(probs, torch.Tensor):
+        probs = probs.detach().cpu().numpy()
+    if isinstance(targets, torch.Tensor):
+        targets = targets.detach().cpu().numpy()
+
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_boundaries[:-1]
+    bin_uppers = bin_boundaries[1:]
+
+    ece = 0.0
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        in_bin = (probs > bin_lower) & (probs <= bin_upper)
+        prop_in_bin = in_bin.mean()
+
+        if prop_in_bin > 0:
+            accuracy_in_bin = targets[in_bin].mean()
+            avg_confidence_in_bin = probs[in_bin].mean()
+            ece += np.abs(accuracy_in_bin - avg_confidence_in_bin) * prop_in_bin
+
+    return float(ece)

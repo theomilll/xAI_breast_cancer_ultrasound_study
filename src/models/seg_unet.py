@@ -2,7 +2,10 @@
 
 import torch
 import torch.nn as nn
+import lightning as L
 import segmentation_models_pytorch as smp
+
+from src.metrics import dice_score, iou_score
 
 
 class UNetRes34(nn.Module):
@@ -26,9 +29,13 @@ class UNetRes34(nn.Module):
             in_channels: Number of input channels (3 for RGB, 1 for grayscale)
         """
         super().__init__()
-        # TODO: Initialize smp.Unet with specified parameters
-        # self.model = smp.Unet(...)
-        raise NotImplementedError
+        self.model = smp.Unet(
+            encoder_name=encoder_name,
+            encoder_weights=encoder_weights,
+            in_channels=in_channels,
+            classes=num_classes,
+            activation=None,  # Return logits
+        )
 
     def forward(self, x):
         """
@@ -38,11 +45,10 @@ class UNetRes34(nn.Module):
         Returns:
             Logits tensor (B, num_classes, H, W)
         """
-        # TODO: Forward pass through model
-        raise NotImplementedError
+        return self.model(x)
 
 
-class LightningSegModel(nn.Module):
+class LightningSegModel(L.LightningModule):
     """Lightning wrapper for segmentation models.
 
     Handles training/validation steps, metrics, and logging.
@@ -79,21 +85,89 @@ class LightningSegModel(nn.Module):
 
     def training_step(self, batch, batch_idx):
         """Training step."""
-        # TODO: Implement
-        # - Forward pass
-        # - Compute loss
-        # - Compute metrics (Dice, IoU)
-        # - Log metrics
-        raise NotImplementedError
+        images = batch["image"]
+        masks = batch["binary_mask"]
+
+        # Forward pass
+        logits = self(images)
+        loss = self.loss_fn(logits, masks)
+
+        # Compute metrics
+        preds = (torch.sigmoid(logits) > 0.5).float()
+        dice = dice_score(preds, masks)
+        iou = iou_score(preds, masks)
+
+        # Log metrics
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train_dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train_iou", iou, on_step=False, on_epoch=True)
+
+        return loss
 
     def validation_step(self, batch, batch_idx):
         """Validation step."""
-        # TODO: Implement similar to training_step
-        raise NotImplementedError
+        images = batch["image"]
+        masks = batch["binary_mask"]
+
+        # Forward pass
+        logits = self(images)
+        loss = self.loss_fn(logits, masks)
+
+        # Compute metrics
+        preds = (torch.sigmoid(logits) > 0.5).float()
+        dice = dice_score(preds, masks)
+        iou = iou_score(preds, masks)
+
+        # Log metrics (val_dice is monitored by checkpoint callback)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val_dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val_iou", iou, on_step=False, on_epoch=True)
+
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        """Test step."""
+        images = batch["image"]
+        masks = batch["binary_mask"]
+
+        # Forward pass
+        logits = self(images)
+        loss = self.loss_fn(logits, masks)
+
+        # Compute metrics
+        preds = (torch.sigmoid(logits) > 0.5).float()
+        dice = dice_score(preds, masks)
+        iou = iou_score(preds, masks)
+
+        # Log metrics
+        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test_dice", dice, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test_iou", iou, on_step=False, on_epoch=True)
+
+        return loss
 
     def configure_optimizers(self):
         """Configure optimizer and scheduler."""
-        # TODO: Implement
-        # - AdamW optimizer
-        # - CosineAnnealingLR or OneCycleLR scheduler
-        raise NotImplementedError
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+        )
+
+        if self.scheduler == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.epochs,
+                eta_min=1e-6,
+            )
+            return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        elif self.scheduler == "one_cycle":
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=self.learning_rate,
+                total_steps=self.epochs,
+                pct_start=0.3,
+            )
+            return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        else:
+            return optimizer

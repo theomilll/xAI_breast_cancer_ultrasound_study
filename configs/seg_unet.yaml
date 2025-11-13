@@ -33,7 +33,7 @@ loss:
 augment: medium  # 'light', 'medium', or 'heavy'
 
 # Cross-validation
-kfolds: 5
+kfolds: 3
 seed: 42
 
 # Metrics to track

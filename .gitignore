@@ -1,3 +1,67 @@
+# Python
+*.py[cod]
+*$py.class
+__pycache__/
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# Dataset directories (99MB + 45MB)
+BUS_UC/
+BUS_UC_classification/
+
+# Keep splits metadata
+!data_splits.json
+
+# Model artifacts
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+checkpoints/
+lightning_logs/
+wandb/
+mlruns/
+outputs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Plans (per CLAUDE.md)
 plans/
-plan.md
-env
+
+# Streamlit
+.streamlit/
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+temp/
+tmp/
