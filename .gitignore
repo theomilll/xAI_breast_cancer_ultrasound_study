@@ -12,19 +12,10 @@ ENV/
 env/
 .conda/
 
-# Dataset directories (99MB + 45MB)
-BUS_UC/
-BUS_UC_classification/
-
 # Keep splits metadata
 !data_splits.json
 
-# Model artifacts
-*.pt
-*.pth
-*.ckpt
-*.safetensors
-checkpoints/
+# Training logs and experiment tracking (keep checkpoints & models)
 lightning_logs/
 wandb/
 mlruns/
