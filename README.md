@@ -85,6 +85,8 @@ Interface web com:
 - Upload de imagens de ultrassom
 - Segmentação + classificação em tempo real
 - Visualização XAI (Grad-CAM, IG, RISE) sobreposta às predições
+- Carregamento automático dos checkpoints `outputs/seg_unet/fold_0/best.ckpt` (U-Net ResNet-34) e `outputs/cls_resnet18/fold_0/best.ckpt` (ResNet-18) para inferência
+- Ajuste de opacidade/limiar, métricas Dice/IoU (quando máscara GT é enviada) e seleção dinâmica de métodos XAI
 
 ### Outros Comandos
 
@@ -94,6 +96,12 @@ make clean  # Limpa caches (__pycache__, .ipynb_checkpoints)
 ```
 
 ## Arquitetura
+
+### Modelos Utilizados
+
+- **Segmentação**: U-Net com encoder ResNet-34 (pré-treinado ImageNet) carregado de `outputs/seg_unet/fold_0/best.ckpt`
+- **Classificação**: ResNet-18 binário (pré-treinado ImageNet) a partir de `outputs/cls_resnet18/fold_0/best.ckpt`
+- **XAI**: Grad-CAM, Grad-CAM++, Integrated Gradients e RISE integrados ao app do Streamlit
 
 ### Segmentação
 
